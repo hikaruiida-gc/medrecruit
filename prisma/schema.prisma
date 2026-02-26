@@ -1,0 +1,281 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// === 認証・組織 ===
+
+model Organization {
+  id          String     @id @default(cuid())
+  name        String
+  type        ClinicType
+  address     String
+  prefecture  String
+  city        String
+  latitude    Float?
+  longitude   Float?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  users         User[]
+  positions     Position[]
+  applicants    Applicant[]
+  competitors   Competitor[]
+  director      DirectorProfile?
+  notifications Notification[]
+}
+
+enum ClinicType {
+  CLINIC
+  HOSPITAL
+  DENTAL
+  PHARMACY
+  NURSING_HOME
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  name           String
+  hashedPassword String
+  role           UserRole     @default(STAFF)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+// === 募集職種 ===
+
+model Position {
+  id              String         @id @default(cuid())
+  organizationId  String
+  organization    Organization   @relation(fields: [organizationId], references: [id])
+  title           String
+  employmentType  EmploymentType
+  salaryMin       Int?
+  salaryMax       Int?
+  hourlyRateMin   Int?
+  hourlyRateMax   Int?
+  description     String?
+  requirements    String?
+  benefits        String?
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  applicants       Applicant[]
+  salaryBenchmarks SalaryBenchmark[]
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+}
+
+// === 給与ベンチマーク ===
+
+model SalaryBenchmark {
+  id           String   @id @default(cuid())
+  positionId   String
+  position     Position @relation(fields: [positionId], references: [id])
+  source       String
+  areaName     String
+  median       Int
+  percentile25 Int?
+  percentile75 Int?
+  sampleSize   Int?
+  fetchedAt    DateTime @default(now())
+}
+
+// === 競合分析 ===
+
+model Competitor {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  address        String?
+  distance       Float?
+  website        String?
+  createdAt      DateTime     @default(now())
+
+  conditions CompetitorCondition[]
+}
+
+model CompetitorCondition {
+  id           String     @id @default(cuid())
+  competitorId String
+  competitor   Competitor @relation(fields: [competitorId], references: [id])
+  jobTitle     String
+  salaryMin    Int?
+  salaryMax    Int?
+  hourlyRate   Int?
+  benefits     String?
+  workingHours String?
+  holidays     String?
+  source       String?
+  fetchedAt    DateTime   @default(now())
+}
+
+// === 応募者管理 ===
+
+model Applicant {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  positionId     String?
+  position       Position?    @relation(fields: [positionId], references: [id])
+
+  lastName      String
+  firstName     String
+  lastNameKana  String?
+  firstNameKana String?
+  email         String?
+  phone         String?
+  dateOfBirth   DateTime?
+  gender        Gender?
+  address       String?
+
+  currentEmployer String?
+  yearsExperience Int?
+  licenses        String?
+  education       String?
+
+  status    ApplicantStatus @default(NEW)
+  source    String?
+  appliedAt DateTime        @default(now())
+  rating    Int?            @default(0)
+  notes     String?
+
+  personalityType     String?
+  compatibilityScore  Float?
+  compatibilityReport String?
+
+  resumeUrl        String?
+  resumeParsedData Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  interviews    Interview[]
+  statusHistory StatusHistory[]
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum ApplicantStatus {
+  NEW
+  SCREENING
+  INTERVIEW_1
+  INTERVIEW_2
+  OFFER
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+model StatusHistory {
+  id          String           @id @default(cuid())
+  applicantId String
+  applicant   Applicant        @relation(fields: [applicantId], references: [id])
+  fromStatus  ApplicantStatus?
+  toStatus    ApplicantStatus
+  changedBy   String?
+  note        String?
+  changedAt   DateTime         @default(now())
+}
+
+// === 面接管理 ===
+
+model Interview {
+  id              String          @id @default(cuid())
+  applicantId     String
+  applicant       Applicant       @relation(fields: [applicantId], references: [id])
+  scheduledAt     DateTime
+  duration        Int?
+  interviewerName String?
+  type            InterviewType   @default(IN_PERSON)
+  status          InterviewStatus @default(SCHEDULED)
+
+  audioUrl   String?
+  transcript String?
+  summary    String?
+  keyPoints  Json?
+  evaluation Json?
+
+  notes     String?
+  rating    Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum InterviewType {
+  IN_PERSON
+  ONLINE
+  PHONE
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// === 院長プロフィール（相性診断用） ===
+
+model DirectorProfile {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  personalityType String?
+  mbtiType        String?
+  workStyleType   String?
+
+  surveyResponses Json?
+  idealTraits     Json?
+  dealBreakers    Json?
+  teamCulture     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// === 通知 ===
+
+model Notification {
+  id              String           @id @default(cuid())
+  organizationId  String
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+  type            NotificationType
+  title           String
+  message         String
+  relatedId       String?
+  relatedType     String?
+  isRead          Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+}
+
+enum NotificationType {
+  NEW_APPLICANT
+  STATUS_CHANGED
+  INTERVIEW_SCHEDULED
+  INTERVIEW_COMPLETED
+  COMPATIBILITY_CALCULATED
+}
