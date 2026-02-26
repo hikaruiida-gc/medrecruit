@@ -5,7 +5,7 @@ import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Briefcase } from "lucide-react";
+import { Plus, Pencil, Trash2, Briefcase, Link2, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -118,6 +118,9 @@ export default function PositionsPage() {
   const [editingPosition, setEditingPosition] = useState<Position | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [urlImportOpen, setUrlImportOpen] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
 
   const {
     register,
@@ -282,6 +285,54 @@ export default function PositionsPage() {
     }
   };
 
+  const handleUrlImport = async () => {
+    if (!importUrl.trim()) {
+      toast.error("URLを入力してください");
+      return;
+    }
+    setImporting(true);
+    try {
+      const res = await fetch("/api/positions/import-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: importUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "取り込みに失敗しました");
+
+      const extracted = data.extractedData;
+      // Pre-fill the create form with extracted data
+      setEditingPosition(null);
+      reset({
+        title: extracted.title || "",
+        employmentType: extracted.employmentType || undefined,
+        salaryMin: extracted.salaryMin?.toString() ?? "",
+        salaryMax: extracted.salaryMax?.toString() ?? "",
+        hourlyRateMin: extracted.hourlyRateMin?.toString() ?? "",
+        hourlyRateMax: extracted.hourlyRateMax?.toString() ?? "",
+        description: extracted.description || "",
+        requirements: extracted.requirements || "",
+        benefits: extracted.benefits || "",
+      });
+
+      setUrlImportOpen(false);
+      setImportUrl("");
+      setDialogOpen(true);
+
+      if (data.demo) {
+        toast.info("デモデータが表示されています（API未設定）");
+      } else {
+        toast.success("求人情報を取り込みました。内容を確認して保存してください。");
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "取り込みに失敗しました"
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -292,13 +343,23 @@ export default function PositionsPage() {
             募集中の職種を管理します
           </p>
         </div>
-        <Button
-          onClick={openCreateDialog}
-          className="bg-[#769FCD] hover:bg-[#4A7FB5] text-white"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          新規作成
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setUrlImportOpen(true)}
+            variant="outline"
+            className="border-[#B9D7EA] text-[#4A7FB5] hover:bg-[#D6E6F2]"
+          >
+            <Link2 className="w-4 h-4 mr-2" />
+            URLから取り込み
+          </Button>
+          <Button
+            onClick={openCreateDialog}
+            className="bg-[#769FCD] hover:bg-[#4A7FB5] text-white"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            新規作成
+          </Button>
+        </div>
       </div>
 
       {/* Table */}
@@ -592,6 +653,89 @@ export default function PositionsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* URL Import Dialog */}
+      <Dialog open={urlImportOpen} onOpenChange={setUrlImportOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle className="text-[#2C3E50] flex items-center gap-2">
+              <Link2 className="w-5 h-5 text-[#769FCD]" />
+              求人URLから取り込み
+            </DialogTitle>
+            <DialogDescription className="text-[#7F8C9B]">
+              求人媒体の募集ページURLを貼り付けると、AIが自動で情報を抽出します
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="importUrl" className="text-[#2C3E50]">
+                求人ページURL
+              </Label>
+              <Input
+                id="importUrl"
+                type="url"
+                placeholder="https://example.com/job/12345"
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                className="border-[#B9D7EA] focus-visible:ring-[#769FCD]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleUrlImport();
+                  }
+                }}
+              />
+            </div>
+            <div className="bg-[#F7FBFC] border border-[#D6E6F2] rounded-lg p-3">
+              <p className="text-xs text-[#7F8C9B] leading-relaxed">
+                対応サイト例: Indeed、ジョブメドレー、マイナビ、リクナビ、m3.com、
+                デンタルワーカー、ナースパワーなど。求人詳細ページのURLを指定してください。
+              </p>
+            </div>
+            {importing && (
+              <div className="flex items-center gap-3 p-3 bg-[#D6E6F2]/50 rounded-lg">
+                <Loader2 className="w-5 h-5 text-[#769FCD] animate-spin" />
+                <div>
+                  <p className="text-sm font-medium text-[#2C3E50]">取り込み中...</p>
+                  <p className="text-xs text-[#7F8C9B]">
+                    ページを取得してAIが情報を解析しています
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setUrlImportOpen(false);
+                setImportUrl("");
+              }}
+              className="border-[#B9D7EA] text-[#2C3E50]"
+            >
+              キャンセル
+            </Button>
+            <Button
+              onClick={handleUrlImport}
+              disabled={importing || !importUrl.trim()}
+              className="bg-[#769FCD] hover:bg-[#4A7FB5] text-white"
+            >
+              {importing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  解析中...
+                </>
+              ) : (
+                <>
+                  <ArrowRight className="w-4 h-4 mr-2" />
+                  取り込む
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
