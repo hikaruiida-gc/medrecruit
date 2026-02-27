@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import Anthropic from "@anthropic-ai/sdk";
+import { callAI, extractJSON } from "@/lib/ai";
 
 interface CompatibilityResult {
   compatibilityScore: number;
@@ -95,24 +95,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // If no API key, return demo data
-    if (!process.env.ANTHROPIC_API_KEY) {
-      const demoResult = getDemoData();
-
-      await prisma.applicant.update({
-        where: { id: applicantId },
-        data: {
-          compatibilityScore: demoResult.compatibilityScore,
-          compatibilityReport: JSON.stringify(demoResult),
-        },
-      });
-
-      return NextResponse.json({
-        ...demoResult,
-        demo: true,
-      });
-    }
-
     // Build parsed resume data context
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resumeData = applicant.resumeParsedData as any;
@@ -153,32 +135,28 @@ export async function POST(req: NextRequest) {
   "overallAssessment": "総合評価コメント (100字)"
 }`;
 
-    // Call Claude API
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2048,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
+    // Call AI
+    const responseText = await callAI(prompt);
+    if (!responseText) {
+      const demoResult = getDemoData();
+
+      await prisma.applicant.update({
+        where: { id: applicantId },
+        data: {
+          compatibilityScore: demoResult.compatibilityScore,
+          compatibilityReport: JSON.stringify(demoResult),
         },
-      ],
-    });
+      });
 
-    const responseText =
-      message.content[0].type === "text" ? message.content[0].text : "";
-
-    // Extract JSON from response (handle markdown code blocks)
-    let jsonStr = responseText;
-    const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[1].trim();
+      return NextResponse.json({
+        ...demoResult,
+        demo: true,
+      });
     }
 
     let result: CompatibilityResult;
     try {
-      result = JSON.parse(jsonStr);
+      result = JSON.parse(extractJSON(responseText));
     } catch {
       return NextResponse.json(
         {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import Anthropic from "@anthropic-ai/sdk";
+import { callAI, extractJSON } from "@/lib/ai";
 
 // ---------------------------------------------------------------------------
 // Survey questions (mirrored in page component)
@@ -150,24 +150,20 @@ export async function POST(request: NextRequest) {
   // Build analysis result
   let analysis: AnalysisResult;
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const qaText = Object.entries(surveyResponses)
+    .sort(([a], [b]) => {
+      const numA = parseInt(a.replace("Q", ""), 10);
+      const numB = parseInt(b.replace("Q", ""), 10);
+      return numA - numB;
+    })
+    .map(([key, value]) => {
+      const question = QUESTIONS[key] || key;
+      const label = SCALE_LABELS[value] || String(value);
+      return `${key}: ${question} → ${value}（${label}）`;
+    })
+    .join("\n");
 
-  if (apiKey) {
-    // ---- Call Claude API ----
-    const qaText = Object.entries(surveyResponses)
-      .sort(([a], [b]) => {
-        const numA = parseInt(a.replace("Q", ""), 10);
-        const numB = parseInt(b.replace("Q", ""), 10);
-        return numA - numB;
-      })
-      .map(([key, value]) => {
-        const question = QUESTIONS[key] || key;
-        const label = SCALE_LABELS[value] || String(value);
-        return `${key}: ${question} → ${value}（${label}）`;
-      })
-      .join("\n");
-
-    const prompt = `以下は医療機関の院長が回答した性格診断アンケートの結果です。
+  const prompt = `以下は医療機関の院長が回答した性格診断アンケートの結果です。
 
 ${qaText}
 
@@ -208,34 +204,16 @@ JSON形式で出力:
 
 JSONのみを出力してください。説明文は不要です。`;
 
+  const aiResponse = await callAI(prompt);
+  if (aiResponse) {
     try {
-      const anthropic = new Anthropic({ apiKey });
-
-      const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1024,
-        messages: [{ role: "user", content: prompt }],
-      });
-
-      const textBlock = message.content.find((b) => b.type === "text");
-      if (!textBlock || textBlock.type !== "text") {
-        throw new Error("Claude API returned no text content");
-      }
-
-      // Extract JSON from the response (handle potential markdown fences)
-      let jsonStr = textBlock.text.trim();
-      const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (jsonMatch) {
-        jsonStr = jsonMatch[1].trim();
-      }
-
-      analysis = JSON.parse(jsonStr) as AnalysisResult;
+      analysis = JSON.parse(extractJSON(aiResponse)) as AnalysisResult;
     } catch (err) {
-      console.error("Claude API error, falling back to demo data:", err);
+      console.error("AI response parse error, falling back to demo data:", err);
       analysis = DEMO_RESULT;
     }
   } else {
-    // ---- No API key → use demo data ----
+    // No API key → use demo data
     analysis = DEMO_RESULT;
   }
 

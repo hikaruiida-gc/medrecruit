@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import Anthropic from "@anthropic-ai/sdk";
+import { callAI, extractJSON } from "@/lib/ai";
 
 const EXTRACT_PROMPT = `以下は医療機関（歯科医院・クリニック・病院）の求人募集ページから取得したテキストです。
 この求人情報から、医院名と募集条件を抽出してください。
@@ -172,8 +172,9 @@ export async function POST(req: NextRequest) {
     const truncatedText =
       pageText.length > 10000 ? pageText.slice(0, 10000) + "\n..." : pageText;
 
-    // Check for API key
-    if (!process.env.ANTHROPIC_API_KEY) {
+    // Call AI
+    const responseText = await callAI(EXTRACT_PROMPT + truncatedText);
+    if (!responseText) {
       return NextResponse.json({
         extractedData: getMockExtractedData(),
         sourceUrl: url,
@@ -181,28 +182,9 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Call Claude API
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      messages: [
-        { role: "user", content: EXTRACT_PROMPT + truncatedText },
-      ],
-    });
-
-    const responseText =
-      message.content[0].type === "text" ? message.content[0].text : "";
-
-    let jsonStr = responseText;
-    const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[1].trim();
-    }
-
     let extractedData;
     try {
-      extractedData = JSON.parse(jsonStr);
+      extractedData = JSON.parse(extractJSON(responseText));
     } catch {
       return NextResponse.json(
         { error: "AIからの応答を解析できませんでした。もう一度お試しください。" },

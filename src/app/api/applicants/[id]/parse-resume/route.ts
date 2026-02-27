@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import Anthropic from "@anthropic-ai/sdk";
+import { callAI, extractJSON } from "@/lib/ai";
 
 interface ResumeEducation {
   year: string | null;
@@ -210,8 +210,9 @@ export async function POST(
       );
     }
 
-    // Check for API key — if missing, return demo data
-    if (!process.env.ANTHROPIC_API_KEY) {
+    // Call AI to structure the extracted text
+    const responseText = await callAI(PARSE_PROMPT + extractedText);
+    if (!responseText) {
       return NextResponse.json({
         parsedData: getMockResumeData(),
         confidence: 0.85,
@@ -219,32 +220,9 @@ export async function POST(
       });
     }
 
-    // Call Claude API to structure the extracted text
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      messages: [
-        {
-          role: "user",
-          content: PARSE_PROMPT + extractedText,
-        },
-      ],
-    });
-
-    const responseText =
-      message.content[0].type === "text" ? message.content[0].text : "";
-
-    // Extract JSON from response (handle markdown code blocks)
-    let jsonStr = responseText;
-    const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[1].trim();
-    }
-
     let parsedData: ResumeData;
     try {
-      parsedData = JSON.parse(jsonStr);
+      parsedData = JSON.parse(extractJSON(responseText));
     } catch {
       return NextResponse.json(
         {
