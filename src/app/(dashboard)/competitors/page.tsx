@@ -43,6 +43,10 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  Link2,
+  Loader2,
+  ArrowRight,
+  CheckCircle,
 } from "lucide-react";
 import {
   RadarChart,
@@ -253,6 +257,27 @@ export default function CompetitorsPage() {
 
   // Submitting state
   const [submitting, setSubmitting] = useState(false);
+
+  // URL import state
+  const [urlImportOpen, setUrlImportOpen] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<{
+    clinicName: string;
+    address: string | null;
+    website: string | null;
+    conditions: Array<{
+      jobTitle: string;
+      salaryMin: number | null;
+      salaryMax: number | null;
+      hourlyRate: number | null;
+      benefits: string | null;
+      workingHours: string | null;
+      holidays: string | null;
+    }>;
+  } | null>(null);
+  const [importSourceUrl, setImportSourceUrl] = useState("");
+  const [savingImport, setSavingImport] = useState(false);
 
   // ===== Data Fetching =====
 
@@ -764,6 +789,95 @@ export default function CompetitorsPage() {
     ];
   };
 
+  // ===== URL Import =====
+
+  const handleUrlImport = async () => {
+    if (!importUrl.trim()) {
+      toast.error("URLを入力してください");
+      return;
+    }
+    setImporting(true);
+    setImportPreview(null);
+    try {
+      const res = await fetch("/api/competitors/import-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: importUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "取り込みに失敗しました");
+
+      setImportPreview(data.extractedData);
+      setImportSourceUrl(data.sourceUrl);
+
+      if (data.demo) {
+        toast.info("デモデータが表示されています（API未設定）");
+      } else {
+        toast.success("求人情報を取り込みました。内容を確認してください。");
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "取り込みに失敗しました"
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleSaveImport = async () => {
+    if (!importPreview) return;
+    setSavingImport(true);
+    try {
+      // Create competitor
+      const compRes = await fetch("/api/competitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: importPreview.clinicName,
+          address: importPreview.address,
+          website: importPreview.website,
+        }),
+      });
+      if (!compRes.ok) {
+        const err = await compRes.json();
+        throw new Error(err.error || "競合の作成に失敗しました");
+      }
+      const newCompetitor = await compRes.json();
+
+      // Create conditions
+      for (const cond of importPreview.conditions) {
+        await fetch(`/api/competitors/${newCompetitor.id}/conditions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobTitle: cond.jobTitle,
+            salaryMin: cond.salaryMin,
+            salaryMax: cond.salaryMax,
+            hourlyRate: cond.hourlyRate,
+            benefits: cond.benefits,
+            workingHours: cond.workingHours,
+            holidays: cond.holidays,
+            source: importSourceUrl,
+          }),
+        });
+      }
+
+      toast.success(
+        `${importPreview.clinicName}と${importPreview.conditions.length}件の条件を登録しました`
+      );
+      setUrlImportOpen(false);
+      setImportUrl("");
+      setImportPreview(null);
+      fetchCompetitors();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "保存に失敗しました"
+      );
+    } finally {
+      setSavingImport(false);
+    }
+  };
+
   // ===== Render =====
 
   const comparisonRows = buildComparisonData();
@@ -798,16 +912,30 @@ export default function CompetitorsPage() {
             登録済み競合機関: {competitors.length}件
           </p>
         </div>
-        <Button
-          className="bg-[#769FCD] hover:bg-[#4A7FB5] text-white"
-          onClick={() => {
-            resetCompetitorForm();
-            setCompetitorDialogOpen(true);
-          }}
-        >
-          <Plus className="w-4 h-4 mr-1" />
-          競合を追加
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="border-[#B9D7EA] text-[#4A7FB5] hover:bg-[#D6E6F2]"
+            onClick={() => {
+              setUrlImportOpen(true);
+              setImportPreview(null);
+              setImportUrl("");
+            }}
+          >
+            <Link2 className="w-4 h-4 mr-1" />
+            URLから取り込み
+          </Button>
+          <Button
+            className="bg-[#769FCD] hover:bg-[#4A7FB5] text-white"
+            onClick={() => {
+              resetCompetitorForm();
+              setCompetitorDialogOpen(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            競合を追加
+          </Button>
+        </div>
       </div>
 
       {/* ===== C. Competitor Cards Grid ===== */}
@@ -1704,6 +1832,195 @@ export default function CompetitorsPage() {
               {submitting ? "削除中..." : "削除"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== URL Import Dialog ===== */}
+      <Dialog open={urlImportOpen} onOpenChange={setUrlImportOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-[#2C3E50] flex items-center gap-2">
+              <Link2 className="w-5 h-5 text-[#769FCD]" />
+              競合の求人URLから取り込み
+            </DialogTitle>
+          </DialogHeader>
+
+          {!importPreview ? (
+            // Step 1: URL入力
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="competitorImportUrl" className="text-[#2C3E50]">
+                  求人ページURL
+                </Label>
+                <Input
+                  id="competitorImportUrl"
+                  type="url"
+                  placeholder="https://example.com/clinic/job/12345"
+                  value={importUrl}
+                  onChange={(e) => setImportUrl(e.target.value)}
+                  className="border-[#B9D7EA] focus-visible:ring-[#769FCD]"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleUrlImport();
+                    }
+                  }}
+                />
+              </div>
+              <div className="bg-[#F7FBFC] border border-[#D6E6F2] rounded-lg p-3">
+                <p className="text-xs text-[#7F8C9B] leading-relaxed">
+                  競合医院の求人ページURLを指定すると、AIが医院名・職種別・勤務形態別の
+                  採用条件を自動抽出します。Indeed、ジョブメドレー、デンタルワーカー、
+                  グッピー等の求人サイトに対応しています。
+                </p>
+              </div>
+              {importing && (
+                <div className="flex items-center gap-3 p-3 bg-[#D6E6F2]/50 rounded-lg">
+                  <Loader2 className="w-5 h-5 text-[#769FCD] animate-spin" />
+                  <div>
+                    <p className="text-sm font-medium text-[#2C3E50]">取り込み中...</p>
+                    <p className="text-xs text-[#7F8C9B]">
+                      ページを取得してAIが求人条件を解析しています
+                    </p>
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setUrlImportOpen(false)}
+                  className="border-[#B9D7EA] text-[#2C3E50]"
+                >
+                  キャンセル
+                </Button>
+                <Button
+                  onClick={handleUrlImport}
+                  disabled={importing || !importUrl.trim()}
+                  className="bg-[#769FCD] hover:bg-[#4A7FB5] text-white"
+                >
+                  {importing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      解析中...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight className="w-4 h-4 mr-2" />
+                      取り込む
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            // Step 2: プレビュー確認
+            <div className="space-y-4 py-2">
+              {/* 医院情報 */}
+              <Card className="border-[#B9D7EA]">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base text-[#2C3E50] flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-[#769FCD]" />
+                    {importPreview.clinicName}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-[#7F8C9B] space-y-1">
+                  {importPreview.address && (
+                    <p className="flex items-center gap-1">
+                      <MapPin className="w-3 h-3" />
+                      {importPreview.address}
+                    </p>
+                  )}
+                  {importPreview.website && (
+                    <p className="flex items-center gap-1">
+                      <ExternalLink className="w-3 h-3" />
+                      {importPreview.website}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* 抽出された条件一覧 */}
+              <div>
+                <h4 className="text-sm font-semibold text-[#2C3E50] mb-2">
+                  抽出された採用条件（{importPreview.conditions.length}件）
+                </h4>
+                <div className="space-y-3">
+                  {importPreview.conditions.map((cond, i) => (
+                    <Card key={i} className="border-[#D6E6F2]">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge className="bg-[#769FCD] text-white text-xs">
+                            {cond.jobTitle}
+                          </Badge>
+                          {cond.hourlyRate ? (
+                            <span className="text-sm text-[#2C3E50] font-medium">
+                              時給 ¥{cond.hourlyRate.toLocaleString()}
+                            </span>
+                          ) : (cond.salaryMin || cond.salaryMax) ? (
+                            <span className="text-sm text-[#2C3E50] font-medium">
+                              月給 {cond.salaryMin ? `¥${cond.salaryMin.toLocaleString()}` : ""}
+                              {cond.salaryMin && cond.salaryMax ? " 〜 " : ""}
+                              {cond.salaryMax ? `¥${cond.salaryMax.toLocaleString()}` : ""}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-[#7F8C9B]">
+                          {cond.workingHours && (
+                            <div>
+                              <span className="font-medium text-[#2C3E50]">勤務時間: </span>
+                              {cond.workingHours}
+                            </div>
+                          )}
+                          {cond.holidays && (
+                            <div>
+                              <span className="font-medium text-[#2C3E50]">休日: </span>
+                              {cond.holidays}
+                            </div>
+                          )}
+                          {cond.benefits && (
+                            <div className="md:col-span-2">
+                              <span className="font-medium text-[#2C3E50]">待遇: </span>
+                              {cond.benefits}
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setImportPreview(null);
+                    setImportUrl("");
+                  }}
+                  className="border-[#B9D7EA] text-[#2C3E50]"
+                >
+                  やり直す
+                </Button>
+                <Button
+                  onClick={handleSaveImport}
+                  disabled={savingImport}
+                  className="bg-[#769FCD] hover:bg-[#4A7FB5] text-white"
+                >
+                  {savingImport ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      保存中...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      この内容で登録する
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
