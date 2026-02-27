@@ -70,8 +70,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("Registration error:", error);
+    const message = error instanceof Error ? error.message : "不明なエラー";
     return NextResponse.json(
-      { error: "登録中にエラーが発生しました" },
+      { error: `登録中にエラーが発生しました: ${message}` },
       { status: 500 }
     );
   }
