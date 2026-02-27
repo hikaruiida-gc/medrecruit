@@ -45,6 +45,9 @@ function getMockExtractedData() {
   };
 }
 
+// Allow longer execution on Vercel
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user)
@@ -78,7 +81,7 @@ export async function POST(req: NextRequest) {
     let pageText: string;
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      const timeout = setTimeout(() => controller.abort(), 8000);
 
       const response = await fetch(parsedUrl.toString(), {
         headers: {
@@ -101,24 +104,21 @@ export async function POST(req: NextRequest) {
 
       const html = await response.text();
 
-      // Strip HTML tags and extract text content
       pageText = html
-        // Remove script and style content
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-        // Replace common block elements with newlines
+        .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, "")
+        .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, "")
+        .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, "")
         .replace(/<\/(p|div|h[1-6]|li|tr|br\s*\/?)>/gi, "\n")
         .replace(/<(br|hr)\s*\/?>/gi, "\n")
-        // Remove remaining HTML tags
         .replace(/<[^>]+>/g, " ")
-        // Decode HTML entities
         .replace(/&nbsp;/g, " ")
         .replace(/&amp;/g, "&")
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, "'")
-        // Clean up whitespace
         .replace(/[ \t]+/g, " ")
         .replace(/\n\s*\n/g, "\n")
         .trim();
@@ -137,9 +137,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Truncate to avoid token limits (keep first ~8000 chars)
     const truncatedText =
-      pageText.length > 8000 ? pageText.slice(0, 8000) + "\n..." : pageText;
+      pageText.length > 6000 ? pageText.slice(0, 6000) + "\n..." : pageText;
 
     // Call AI
     const responseText = await callAI(EXTRACT_PROMPT + truncatedText);

@@ -799,13 +799,23 @@ export default function CompetitorsPage() {
     setImporting(true);
     setImportPreview(null);
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
       const res = await fetch("/api/competitors/import-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: importUrl.trim() }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "取り込みに失敗しました");
+
+      if (!data.extractedData || !data.extractedData.clinicName) {
+        throw new Error("求人情報を正しく読み取れませんでした。別のURLをお試しください。");
+      }
 
       setImportPreview(data.extractedData);
       setImportSourceUrl(data.sourceUrl);
@@ -816,9 +826,13 @@ export default function CompetitorsPage() {
         toast.success("求人情報を取り込みました。内容を確認してください。");
       }
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "取り込みに失敗しました"
-      );
+      if (error instanceof Error && error.name === "AbortError") {
+        toast.error("取り込みがタイムアウトしました。もう一度お試しください。");
+      } else {
+        toast.error(
+          error instanceof Error ? error.message : "取り込みに失敗しました"
+        );
+      }
     } finally {
       setImporting(false);
     }

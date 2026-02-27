@@ -86,6 +86,9 @@ function getMockExtractedData() {
   };
 }
 
+// Allow longer execution on Vercel (up to 60s on Pro, 10s on Hobby)
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user)
@@ -116,7 +119,7 @@ export async function POST(req: NextRequest) {
     let pageText: string;
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      const timeout = setTimeout(() => controller.abort(), 8000);
 
       const response = await fetch(parsedUrl.toString(), {
         headers: {
@@ -126,6 +129,7 @@ export async function POST(req: NextRequest) {
           "Accept-Language": "ja,en;q=0.9",
         },
         signal: controller.signal,
+        redirect: "follow",
       });
 
       clearTimeout(timeout);
@@ -142,6 +146,9 @@ export async function POST(req: NextRequest) {
       pageText = html
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, "")
+        .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, "")
+        .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, "")
         .replace(/<\/(p|div|h[1-6]|li|tr|br\s*\/?)>/gi, "\n")
         .replace(/<(br|hr)\s*\/?>/gi, "\n")
         .replace(/<[^>]+>/g, " ")
@@ -162,15 +169,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: message }, { status: 422 });
     }
 
-    if (pageText.length < 100) {
+    if (pageText.length < 50) {
       return NextResponse.json(
         { error: "ページから十分なテキストを取得できませんでした" },
         { status: 422 }
       );
     }
 
+    // Truncate to keep AI processing fast
     const truncatedText =
-      pageText.length > 10000 ? pageText.slice(0, 10000) + "\n..." : pageText;
+      pageText.length > 6000 ? pageText.slice(0, 6000) + "\n..." : pageText;
 
     // Call AI
     const responseText = await callAI(EXTRACT_PROMPT + truncatedText);
