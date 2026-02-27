@@ -70,16 +70,22 @@ export default function RegisterPage() {
         }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        setError(data.error || "登録中にエラーが発生しました");
+        let errorMsg = `サーバーエラー (${res.status})`;
+        try {
+          const data = await res.json();
+          errorMsg = data.error || errorMsg;
+        } catch {
+          const text = await res.text();
+          errorMsg = `サーバーエラー (${res.status}): ${text.substring(0, 200)}`;
+        }
+        setError(errorMsg);
         return;
       }
 
       router.push("/login?registered=true");
-    } catch {
-      setError("登録中にエラーが発生しました");
+    } catch (err) {
+      setError(`通信エラー: ${err instanceof Error ? err.message : "不明なエラー"}`);
     } finally {
       setLoading(false);
     }
