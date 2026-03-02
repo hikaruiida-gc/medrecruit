@@ -27,6 +27,9 @@ model Organization {
   competitors   Competitor[]
   director      DirectorProfile?
   notifications Notification[]
+
+  employerMatchingAnswers EmployerMatchingAnswer[]
+  matchingResults         MatchingResult[]
 }
 
 enum ClinicType {
@@ -75,6 +78,9 @@ model Position {
 
   applicants       Applicant[]
   salaryBenchmarks SalaryBenchmark[]
+
+  employerMatchingAnswers EmployerMatchingAnswer[]
+  matchingResults         MatchingResult[]
 }
 
 enum EmploymentType {
@@ -170,6 +176,9 @@ model Applicant {
 
   interviews    Interview[]
   statusHistory StatusHistory[]
+
+  jobseekerMatchingAnswers JobseekerMatchingAnswer[]
+  matchingResults          MatchingResult[]
 }
 
 enum Gender {
@@ -278,4 +287,94 @@ enum NotificationType {
   INTERVIEW_SCHEDULED
   INTERVIEW_COMPLETED
   COMPATIBILITY_CALCULATED
+}
+
+// === マッチング機能 ===
+
+enum MatchingDimension {
+  PO
+  PJ_DA
+  PJ_NS
+  PG
+  PS
+}
+
+enum QuestionSide {
+  EMPLOYER
+  JOBSEEKER
+}
+
+enum QuestionInputType {
+  LIKERT7
+  PRIORITY
+  RANGE_SELECT
+  NUMERIC
+}
+
+model MatchingQuestion {
+  id            String             @id @default(cuid())
+  code          String             @unique
+  dimension     MatchingDimension
+  side          QuestionSide
+  pairCode      String?
+  questionText  String
+  inputType     QuestionInputType
+  scaleOptions  Json?
+  orderIndex    Int
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  employerAnswers  EmployerMatchingAnswer[]
+  jobseekerAnswers JobseekerMatchingAnswer[]
+}
+
+model EmployerMatchingAnswer {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  positionId     String?
+  position       Position?    @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  questionId     String
+  question       MatchingQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answerValue    Json
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, positionId, questionId])
+}
+
+model JobseekerMatchingAnswer {
+  id          String   @id @default(cuid())
+  applicantId String
+  applicant   Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  questionId  String
+  question    MatchingQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answerValue Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([applicantId, questionId])
+}
+
+model MatchingResult {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  applicantId    String
+  applicant      Applicant    @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  positionId     String?
+  position       Position?    @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  totalScore     Float
+  poScore        Float
+  pjDaScore      Float
+  pjNsScore      Float
+  pgScore        Float
+  psScore        Float
+  dimensionDetail Json
+  comments       Json?
+  calculatedAt   DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, applicantId, positionId])
 }

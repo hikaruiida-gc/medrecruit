@@ -11,6 +11,7 @@ import {
   DollarSign,
   Building2,
   Heart,
+  Target,
   Download,
   LogOut,
   Menu,
@@ -27,6 +28,7 @@ const navItems = [
   { href: "/salary-benchmark", label: "適正給与", icon: DollarSign },
   { href: "/competitors", label: "競合比較", icon: Building2 },
   { href: "/compatibility", label: "相性診断", icon: Heart },
+  { href: "/matching", label: "マッチ度診断", icon: Target },
   { href: "/export", label: "エクスポート", icon: Download },
 ];
 
