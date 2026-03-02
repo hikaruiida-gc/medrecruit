@@ -19,14 +19,32 @@ import {
   AlertTriangle,
   Lightbulb,
 } from "lucide-react";
-import {
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar,
-  ResponsiveContainer,
-} from "recharts";
+import dynamic from "next/dynamic";
+
+const RadarChart = dynamic(
+  () => import("recharts").then((mod) => mod.RadarChart),
+  { ssr: false }
+);
+const PolarGrid = dynamic(
+  () => import("recharts").then((mod) => mod.PolarGrid),
+  { ssr: false }
+);
+const PolarAngleAxis = dynamic(
+  () => import("recharts").then((mod) => mod.PolarAngleAxis),
+  { ssr: false }
+);
+const PolarRadiusAxis = dynamic(
+  () => import("recharts").then((mod) => mod.PolarRadiusAxis),
+  { ssr: false }
+);
+const Radar = dynamic(
+  () => import("recharts").then((mod) => mod.Radar),
+  { ssr: false }
+);
+const ResponsiveContainer = dynamic(
+  () => import("recharts").then((mod) => mod.ResponsiveContainer),
+  { ssr: false }
+);
 import { MATCHING_DIMENSIONS, DIMENSION_IDS } from "@/lib/matching/dimensions";
 import type { DimensionId } from "@/lib/matching/types";
 
