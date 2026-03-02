@@ -185,34 +185,40 @@ export async function POST(
 
     // Call Gemini with PDF directly (multimodal)
     if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({
-        parsedData: getMockResumeData(),
-        confidence: 0.85,
-        demo: true,
-      });
+      return NextResponse.json(
+        { error: "GEMINI_API_KEYが設定されていません。環境変数を確認してください。" },
+        { status: 500 }
+      );
     }
 
     let responseText: string;
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
       const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-      const result = await model.generateContent([
-        {
-          inlineData: {
-            mimeType: "application/pdf",
-            data: base64Data,
+      const result = await model.generateContent({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  mimeType: "application/pdf",
+                  data: base64Data,
+                },
+              },
+              { text: PARSE_PROMPT },
+            ],
           },
-        },
-        { text: PARSE_PROMPT },
-      ]);
+        ],
+      });
       responseText = result.response.text();
     } catch (aiError) {
       console.error("Gemini API error:", aiError);
-      return NextResponse.json({
-        parsedData: getMockResumeData(),
-        confidence: 0.85,
-        demo: true,
-      });
+      const msg = aiError instanceof Error ? aiError.message : String(aiError);
+      return NextResponse.json(
+        { error: `AI解析エラー: ${msg}` },
+        { status: 500 }
+      );
     }
 
     let parsedData: ResumeData;
