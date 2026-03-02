@@ -18,6 +18,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALID_APPLICANT_FIELDS = [
   "lastName",
   "firstName",
+  "fullName",
   "lastNameKana",
   "firstNameKana",
   "email",
@@ -77,11 +78,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Check that lastName and firstName are mapped
+    // Check that lastName and firstName (or fullName) are mapped
     const mappedFields = Object.values(mapping);
-    if (!mappedFields.includes("lastName") || !mappedFields.includes("firstName")) {
+    const hasFullName = mappedFields.includes("fullName");
+    const hasLastAndFirst = mappedFields.includes("lastName") && mappedFields.includes("firstName");
+    if (!hasFullName && !hasLastAndFirst) {
       return NextResponse.json(
-        { error: "姓(lastName)と名(firstName)のマッピングは必須です" },
+        { error: "姓と名（または氏名）のマッピングは必須です" },
         { status: 400 }
       );
     }
@@ -142,6 +145,19 @@ export async function POST(req: NextRequest) {
         const value = row[fileColumn];
         if (value !== undefined && value !== null && String(value).trim() !== "") {
           mapped[appField] = String(value).trim();
+        }
+      }
+
+      // Split fullName into lastName + firstName if needed
+      if (mapped.fullName && !mapped.lastName && !mapped.firstName) {
+        const fullName = String(mapped.fullName).trim();
+        const parts = fullName.split(/[\s　]+/);
+        if (parts.length >= 2) {
+          mapped.lastName = parts[0];
+          mapped.firstName = parts.slice(1).join(" ");
+        } else {
+          mapped.lastName = fullName;
+          mapped.firstName = "";
         }
       }
 

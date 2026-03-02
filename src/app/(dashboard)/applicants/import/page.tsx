@@ -204,9 +204,15 @@ export default function ImportPage() {
     setProgress(0);
 
     try {
+      // Convert array [{source, target}] to object {source: target} for API
+      const mappingObj: Record<string, string> = {};
+      for (const m of activeMappings) {
+        mappingObj[m.source] = m.target;
+      }
+
       const formData = new FormData();
       formData.append("file", file!);
-      formData.append("mapping", JSON.stringify(activeMappings));
+      formData.append("mapping", JSON.stringify(mappingObj));
 
       const res = await fetch("/api/applicants/import", {
         method: "POST",
